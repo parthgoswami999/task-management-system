@@ -1,43 +1,17 @@
 import { Router } from 'express';
-import { body } from 'express-validator';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { sendJsonResponse } from '../config/Util.js';
 import { ApiError, asyncHandler } from './Helper.js';
 import { User } from '../models/User.js';
 import { protect } from '../middleware/auth.js';
-import { validateRequest } from '../middleware/error.js';
 
 const router = Router();
 
 const passwordValidationMessage =
   'Password must be at least 8 characters long and include 1 uppercase letter, 1 digit, and 1 special character';
 const passwordStrengthPattern = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
-
-const registerValidator = [
-  body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters long'),
-  body('email').trim().isEmail().withMessage('Please provide a valid email'),
-  body('password')
-    .matches(passwordStrengthPattern)
-    .withMessage(passwordValidationMessage)
-];
-
-const loginValidator = [
-  body('email').trim().isEmail().withMessage('Please provide a valid email'),
-  body('password').notEmpty().withMessage('Password is required')
-];
-
-const updateProfileValidator = [
-  body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters long'),
-  body('email').trim().isEmail().withMessage('Please provide a valid email')
-];
-
-const changePasswordValidator = [
-  body('oldPassword').notEmpty().withMessage('Old password is required'),
-  body('newPassword')
-    .matches(passwordStrengthPattern)
-    .withMessage(passwordValidationMessage)
-];
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const signToken = (userId) =>
   jwt.sign({ userId }, env.jwtSecret, {
@@ -51,21 +25,69 @@ const sanitizeUser = (user) => ({
   createdAt: user.createdAt
 });
 
+const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const validateRegisterPayload = ({ name, email, password }) => {
+  if (normalizeText(name).length < 2) {
+    throw new ApiError(422, 'Name must be at least 2 characters long');
+  }
+
+  if (!emailPattern.test(normalizeText(email))) {
+    throw new ApiError(422, 'Please provide a valid email');
+  }
+
+  if (!passwordStrengthPattern.test(password ?? '')) {
+    throw new ApiError(422, passwordValidationMessage);
+  }
+};
+
+const validateLoginPayload = ({ email, password }) => {
+  if (!emailPattern.test(normalizeText(email))) {
+    throw new ApiError(422, 'Please provide a valid email');
+  }
+
+  if (!normalizeText(password)) {
+    throw new ApiError(422, 'Password is required');
+  }
+};
+
+const validateProfilePayload = ({ name, email }) => {
+  if (normalizeText(name).length < 2) {
+    throw new ApiError(422, 'Name must be at least 2 characters long');
+  }
+
+  if (!emailPattern.test(normalizeText(email))) {
+    throw new ApiError(422, 'Please provide a valid email');
+  }
+};
+
+const validateChangePasswordPayload = ({ oldPassword, newPassword }) => {
+  if (!normalizeText(oldPassword)) {
+    throw new ApiError(422, 'Old password is required');
+  }
+
+  if (!passwordStrengthPattern.test(newPassword ?? '')) {
+    throw new ApiError(422, passwordValidationMessage);
+  }
+};
+
 router.post(
   '/register',
-  registerValidator,
-  validateRequest,
   asyncHandler(async (req, res) => {
+    validateRegisterPayload(req.body);
+
     const { name, email, password } = req.body;
-    const existingUser = await User.findOne({ email });
+    const normalizedName = name.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+    const existingUser = await User.findOne({ email: normalizedEmail });
 
     if (existingUser) {
       throw new ApiError(409, 'An account with this email already exists');
     }
 
     const user = await User.create({
-      name,
-      email,
+      name: normalizedName,
+      email: normalizedEmail,
       password
     });
 
@@ -84,11 +106,12 @@ router.post(
 
 router.post(
   '/login',
-  loginValidator,
-  validateRequest,
   asyncHandler(async (req, res) => {
+    validateLoginPayload(req.body);
+
     const { email, password } = req.body;
-    const user = await User.findOne({ email }).select('+password');
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail }).select('+password');
 
     const isPasswordValid = user ? user.decryptPassword() === password : false;
 
@@ -120,9 +143,9 @@ router.get(
 router.patch(
   '/profile',
   protect,
-  updateProfileValidator,
-  validateRequest,
   asyncHandler(async (req, res) => {
+    validateProfilePayload(req.body);
+
     const { name, email } = req.body;
     const user = await User.findById(req.user._id);
 
@@ -151,9 +174,9 @@ router.patch(
 router.patch(
   '/change-password',
   protect,
-  changePasswordValidator,
-  validateRequest,
   asyncHandler(async (req, res) => {
+    validateChangePasswordPayload(req.body);
+
     const { oldPassword, newPassword } = req.body;
     const user = await User.findById(req.user._id).select('+password');
 

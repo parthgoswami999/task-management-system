@@ -1,53 +1,9 @@
 import { Router } from 'express';
-import { body, param, query } from 'express-validator';
 import { sendJsonResponse } from '../config/Util.js';
 import { ApiError, asyncHandler } from './Helper.js';
 import { Task } from '../models/Task.js';
-import { validateRequest } from '../middleware/error.js';
 
 const router = Router();
-
-const priorityValues = ['low', 'medium', 'high'];
-
-const taskIdValidator = [param('id').isMongoId().withMessage('Invalid task id')];
-
-const createTaskValidator = [
-  body('title').trim().isLength({ min: 3 }).withMessage('Title must be at least 3 characters long'),
-  body('description')
-    .optional()
-    .isLength({ max: 500 })
-    .withMessage('Description must be at most 500 characters long'),
-  body('status').optional().isInt({ min: 0, max: 2 }).withMessage('Invalid task status'),
-  body('priority').optional().isIn(priorityValues).withMessage('Invalid task priority'),
-  body('dueDate').optional({ nullable: true }).isISO8601().withMessage('Invalid due date')
-];
-
-const updateTaskValidator = [
-  ...taskIdValidator,
-  body('title')
-    .optional()
-    .trim()
-    .isLength({ min: 3 })
-    .withMessage('Title must be at least 3 characters long'),
-  body('description')
-    .optional()
-    .isLength({ max: 500 })
-    .withMessage('Description must be at most 500 characters long'),
-  body('status').optional().isInt({ min: 0, max: 2 }).withMessage('Invalid task status'),
-  body('priority').optional().isIn(priorityValues).withMessage('Invalid task priority'),
-  body('dueDate').optional({ nullable: true }).isISO8601().withMessage('Invalid due date')
-];
-
-const reorderTaskValidator = [
-  ...taskIdValidator,
-  body('status').isInt({ min: 0, max: 2 }).withMessage('Invalid task status'),
-  body('position').isInt({ min: 0 }).withMessage('Position must be a positive integer')
-];
-
-const taskQueryValidator = [
-  query('status').optional().isIn(['0', '1', '2', 'all']).withMessage('Invalid status filter'),
-  query('search').optional().isString().withMessage('Invalid search query')
-];
 
 const buildTaskQuery = (user, filters) => {
   const query = {};
@@ -176,8 +132,6 @@ const reorderTask = async (user, taskId, { status, position }) => {
 
 router.get(
   '/',
-  taskQueryValidator,
-  validateRequest,
   asyncHandler(async (req, res) => {
     const tasks = await listTasks(req.user, req.query);
 
@@ -186,8 +140,6 @@ router.get(
 );
 router.get(
   '/:id',
-  taskIdValidator,
-  validateRequest,
   asyncHandler(async (req, res) => {
     const task = await getTaskById(req.user, req.params.id);
 
@@ -196,8 +148,6 @@ router.get(
 );
 router.post(
   '/',
-  createTaskValidator,
-  validateRequest,
   asyncHandler(async (req, res) => {
     const task = await createTask(req.user, req.body);
 
@@ -206,8 +156,6 @@ router.post(
 );
 router.patch(
   '/:id',
-  updateTaskValidator,
-  validateRequest,
   asyncHandler(async (req, res) => {
     const task = await updateTaskById(req.user, req.params.id, req.body);
 
@@ -216,8 +164,6 @@ router.patch(
 );
 router.patch(
   '/:id/reorder',
-  reorderTaskValidator,
-  validateRequest,
   asyncHandler(async (req, res) => {
     const task = await reorderTask(req.user, req.params.id, req.body);
 
@@ -226,8 +172,6 @@ router.patch(
 );
 router.delete(
   '/:id',
-  taskIdValidator,
-  validateRequest,
   asyncHandler(async (req, res) => {
     const result = await deleteTaskById(req.user, req.params.id);
 
